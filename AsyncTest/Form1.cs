@@ -1,10 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -50,7 +45,7 @@ namespace AsyncTest
         {
             try
             {
-                AppendLog("StartTimer.");
+                AppendLog("タイマー開始");
                 
                 // 時間を取得
                 int interval = int.Parse(this.txtInterval.Text);
@@ -71,46 +66,56 @@ namespace AsyncTest
         /// <summary>
         /// タイマー中断
         /// </summary>
-        private void StopTimer()
+        private async void StopTimer()
         {
             try
             {
-                AppendLog("StopTimer.");
+                AppendLog("タイマーストップ処理 開始");
                 
                 // timerを停止
                 timer1.Enabled = false;
 
                 // タスクのキャンセル
                 tokenSource.Cancel();
-                
-                // すべてのタスクがキャンセルされたことを確認
-                bool existsRunningTask = true;
-                while(existsRunningTask)
+
+                // すべてのタスクがキャンセルされたことを確認する
+                await Task.Run(() =>
                 {
-                    existsRunningTask = false;
-                    
-                    // 各タスクの実行状態をチェック
-                    foreach (var task in taskList)
+                    bool existsRunningTask = true;
+                    while (existsRunningTask)
                     {
-                        if (!task.IsCanceled && !task.IsCompleted)
+                        existsRunningTask = false;
+
+                        // 各タスクの実行状態をチェック
+                        foreach (var task in taskList)
                         {
-                            // まだタスクが完了していなければチェックを続行
-                            existsRunningTask = true;
-                            break;
+                            if (!task.IsCanceled && !task.IsCompleted)
+                            {
+                                // まだタスクが完了していなければチェックを続行
+                                existsRunningTask = true;
+                                break;
+                            }
+                        }
+
+                        if (existsRunningTask)
+                        {
+                            // 300ms待機 (300msに根拠はない)
+                            Thread.Sleep(300);
                         }
                     }
 
-                    if (existsRunningTask) {
-                        // 300ms待機 (300msに根拠はない)
-                        Thread.Sleep(300);
-                    }
-                }
-
+                    // 全タスク終了
+                    AppendLogDelegate appendLog = new AppendLogDelegate(AppendLog);
+                    this.Invoke(appendLog, new Object[] { "全タスク終了" });
+                });
+                
                 // タスクリストをクリア
                 taskList.Clear();
 
                 // tokenSourceを削除
                 tokenSource.Dispose();
+
+                AppendLog("タイマーストップ処理 終了");
             }
             catch (Exception e)
             {
@@ -191,11 +196,11 @@ namespace AsyncTest
             return Task.Run(async () =>
             {
                 // Sleep時間を取得 (3,000 ~ 15,000)
-                var rand = new Random(taskId);
+                var rand = new Random(DateTime.Now.Millisecond + taskId);
                 int waitTime = rand.Next(3000, 15000);
 
                 // 開始ログの表示
-                string msg = string.Format(@"task{0} started: sleepTime={1}", taskId, waitTime);
+                string msg = string.Format(@"task{0} 開始: sleepTime={1}", taskId, waitTime);
                 AppendLogDelegate appendLog = new AppendLogDelegate(AppendLog);
                 this.Invoke(appendLog, new Object[] { msg });
 
@@ -206,7 +211,7 @@ namespace AsyncTest
                 token.ThrowIfCancellationRequested();
 
                 // 終了ログの表示
-                msg = string.Format(@"task{0} finished.", taskId);
+                msg = string.Format(@"task{0} 終了", taskId);
                 this.Invoke(appendLog, new Object[] { msg });
 
             }, token).ContinueWith((t) =>
@@ -216,7 +221,7 @@ namespace AsyncTest
                     // キャンセルされたときの処理
                     // -> キャンセルログの表示
                     AppendLogDelegate appendLog = new AppendLogDelegate(AppendLog);
-                    this.Invoke(appendLog, new Object[] { string.Format(@"task{0} canceled.", taskId) });
+                    this.Invoke(appendLog, new Object[] { string.Format(@"task{0} キャンセル", taskId) });
                 }
             });
         }
@@ -230,7 +235,7 @@ namespace AsyncTest
         {
             try
             {
-                AppendLog("start timer1_Tick.");
+                AppendLog("タイマー定期実行開始");
 
                 // 実行するタスク数
                 int taskNum = int.Parse(this.txtTaskNum.Text);
@@ -250,7 +255,7 @@ namespace AsyncTest
                         if (!t.Status.Equals(TaskStatus.RanToCompletion))
                         {
                             // 前回のタスクが実行中ならスキップする
-                            AppendLog(string.Format("task{0} is running.", i));
+                            AppendLog(string.Format("task{0} は実行中のため、スキップ", i));
                             continue;
                         }
 
