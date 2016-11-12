@@ -14,7 +14,7 @@ namespace AsyncTest
     public partial class Form1 : Form
     {
         /// <summary>
-        /// append log delegate
+        /// 別スレッドからフォームを操作するための Delegate
         /// </summary>
         /// <param name="text"></param>
         delegate void AppendLogDelegate(string text);
@@ -25,7 +25,7 @@ namespace AsyncTest
         private CancellationTokenSource tokenSource = null;
 
         /// <summary>
-        /// Task list
+        /// タスクの実行状態を確認するため、実行されたタスクをリストに格納
         /// </summary>
         private List<Task> taskList = new List<Task>();
 
@@ -44,22 +44,22 @@ namespace AsyncTest
         }
 
         /// <summary>
-        /// 開始
+        /// タイマー開始
         /// </summary>
         private void StartTimer()
         {
             try
             {
                 AppendLog("StartTimer.");
-                // フォームの無効化
-                SetControlsStatus(true);
+                
                 // 時間を取得
                 int interval = int.Parse(this.txtInterval.Text);
                 timer1.Interval = interval;
+
                 // タイマー開始
                 timer1.Enabled = true;
 
-                // cancel token source
+                // cancel token source を生成
                 tokenSource = new CancellationTokenSource();
             }
             catch (Exception e)
@@ -69,38 +69,47 @@ namespace AsyncTest
         }
 
         /// <summary>
-        /// 中断
+        /// タイマー中断
         /// </summary>
         private void StopTimer()
         {
             try
             {
                 AppendLog("StopTimer.");
-                // タスクのキャンセル
-                tokenSource.Cancel();
+                
                 // timerを停止
                 timer1.Enabled = false;
-                // フォームの有効化
-                SetControlsStatus(false);
 
+                // タスクのキャンセル
+                tokenSource.Cancel();
+                
                 // すべてのタスクがキャンセルされたことを確認
-                while(true)
+                bool existsRunningTask = true;
+                while(existsRunningTask)
                 {
-                    Thread.Sleep(300); // 300ms待機
-
+                    existsRunningTask = false;
+                    
+                    // 各タスクの実行状態をチェック
                     foreach (var task in taskList)
                     {
                         if (!task.IsCanceled && !task.IsCompleted)
                         {
-                            continue;
+                            // まだタスクが完了していなければチェックを続行
+                            existsRunningTask = true;
+                            break;
                         }
                     }
-                    break;
+
+                    if (existsRunningTask) {
+                        // 300ms待機 (300msに根拠はない)
+                        Thread.Sleep(300);
+                    }
                 }
 
                 // タスクリストをクリア
                 taskList.Clear();
-                // tokenResourceを削除
+
+                // tokenSourceを削除
                 tokenSource.Dispose();
             }
             catch (Exception e)
@@ -122,27 +131,33 @@ namespace AsyncTest
         }
 
         /// <summary>
-        /// 開始
+        /// 開始ボタンのクリック
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void btnStart_Click(object sender, EventArgs e)
         {
+            // フォームの無効化
+            SetControlsStatus(true);
+
             StartTimer();
         }
 
         /// <summary>
-        /// 中断
+        /// 中断ボタンのクリック
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void btnCancel_Click(object sender, EventArgs e)
         {
             StopTimer();
+
+            // フォームの有効化
+            SetControlsStatus(false);
         }
 
         /// <summary>
-        /// clear
+        /// クリアボタンのクリック
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
@@ -152,7 +167,7 @@ namespace AsyncTest
         }
 
         /// <summary>
-        /// テキスト追加
+        /// 日時を付与してログ領域にテキストを追加する
         /// </summary>
         /// <param name="text"></param>
         private void AppendLog(string text)
@@ -170,6 +185,7 @@ namespace AsyncTest
         /// <returns></returns>
         private Task RandomSleepTask(int taskId)
         {
+            // CancellationTokenを取得
             var token = tokenSource.Token;
             
             return Task.Run(async () =>
@@ -177,24 +193,28 @@ namespace AsyncTest
                 // Sleep時間を取得 (3,000 ~ 15,000)
                 var rand = new Random(taskId);
                 int waitTime = rand.Next(3000, 15000);
-                // start message
+
+                // 開始ログの表示
                 string msg = string.Format(@"task{0} started: sleepTime={1}", taskId, waitTime);
                 AppendLogDelegate appendLog = new AppendLogDelegate(AppendLog);
                 this.Invoke(appendLog, new Object[] { msg });
 
-                // sleep
+                // 指定時間 Sleep する
                 await Task.Delay(waitTime, token);
 
                 // cancelされた？
                 token.ThrowIfCancellationRequested();
 
+                // 終了ログの表示
                 msg = string.Format(@"task{0} finished.", taskId);
                 this.Invoke(appendLog, new Object[] { msg });
+
             }, token).ContinueWith((t) =>
             {
                 if (t.IsCanceled)
                 {
                     // キャンセルされたときの処理
+                    // -> キャンセルログの表示
                     AppendLogDelegate appendLog = new AppendLogDelegate(AppendLog);
                     this.Invoke(appendLog, new Object[] { string.Format(@"task{0} canceled.", taskId) });
                 }
@@ -202,7 +222,7 @@ namespace AsyncTest
         }
 
         /// <summary>
-        /// タイマー処理
+        /// タイマーから定期的に呼ばれる処理
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
@@ -212,7 +232,9 @@ namespace AsyncTest
             {
                 AppendLog("start timer1_Tick.");
 
+                // 実行するタスク数
                 int taskNum = int.Parse(this.txtTaskNum.Text);
+
                 for (int i = 0; i < taskNum; i++)
                 {
                     if (taskList.Count <= i)
